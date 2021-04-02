@@ -39,7 +39,7 @@ def get_radar_data():
     for flight in gt:
         #print("flight: %s" % (str(flight)))
         flight_radar = flight.resample("10s")
-        for i in range(len(flight_radar.data)):
+        for i in range(len(flight_radar.data)-1):
             point = geodesic(kilometers=rng.normal()*radar_error).destination((flight_radar.data.at[i,"latitude"], flight_radar.data.at[i,"longitude"]), rng.random()*360)
             (flight_radar.data.at[i,"latitude"], flight_radar.data.at[i,"longitude"]) = (point.latitude, point.longitude)
             #print("after: %f, %f" % (flight_radar.data.at[i,"latitude"], flight_radar.data.at[i,"longitude"]))
@@ -154,6 +154,27 @@ def kalmanfilter(flight):
     kf = kf.em(measurements, n_iter=5)
     return kf
 
+
+#input: flight (from filter), flight (from ground Data)
+#output: [Rate of errors, avg distance of errors]
+def errorCalculations(predictedFllight, actualFlight):
+
+    errorRate = 0
+    errorDistance = 0
+
+    for index in range(len(predictedFllight.data['longitude'])-1):
+        #TO DO, USE GEOPY TO CALCULATE ACTUAL DISTANCE FOR ERRORDISTANCE
+        error = abs(predictedFllight.data['longitude'][index] - actualFlight.data['longitude'][index]) + \
+                abs(predictedFllight.data['latitude'][index] - actualFlight.data['latitude'][index])
+        if(error != 0):
+            errorRate += 1
+            errorDistance += error
+
+    #rate calculated by combining all and dividing by how many flights
+    return [errorRate/len(predictedFllight), errorDistance/errorRate]
+
+
+
 def testing():
     flights = []  #predicted locations
     flights2 = [] #actual locations
@@ -216,8 +237,7 @@ def testing():
     visualization(flights2, 'geo')
 
     for index in range(len(flights)):
-        print(flights[index].data['x'])
-        print(flights2[index].data['longitude'])
+        #print(errorCalculations(flights[index], flights2[index]))
         visualization2(flights[index], flights2[index], 'geo')
 
 
@@ -226,6 +246,9 @@ def testing():
 
     return "bla"
 testing()
+
+
+
 
 #old matrix from "testing"
 
