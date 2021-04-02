@@ -153,25 +153,14 @@ def testing():
         mesurements = kf.filter(locations)
 
         set_lat_lon_from_x_y(flight)
-        flights.__add__(flight)
-        #flights.append(flight)
+
+        flights.append(flight)
+    visualization(flights, 'geo')
 
 
     for flight in true_data:
-        #print(flight.data.columns)
-        currIndex += 1
-
-        xv = (flight.data['x'][len(flight.data['x'])-1] - flight.data['x'][0])/ len(flight.data['x'])*10
-        yv = (flight.data['y'][len(flight.data['y'])-1] - flight.data['y'][0])/ len(flight.data['y'])*10
-
-
-        locations = np.stack((flight.data['x'], flight.data['y'], [xv]*flight.data['x'].size, [yv]*flight.data['y'].size ), axis=1)
-        mesurements = kf.filter(locations)
-
-        set_lat_lon_from_x_y(flight)
         flights2.append(flight)
-    visualization(flights, 'geo')
-    #visualization(flights2, 'geo')
+    visualization(flights2, 'geo')
 
 
 
