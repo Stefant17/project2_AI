@@ -5,6 +5,8 @@ from traffic.data import samples
 from geopy.distance import geodesic
 from numpy.random import default_rng
 import pyproj
+import copy
+
 #used for the KalmanFilter
 from pykalman import KalmanFilter
 import numpy as np
@@ -60,7 +62,7 @@ def set_lat_lon_from_x_y(flight):
     
     lons, lats = projection(flight.data["x"], flight.data["y"], inverse=True)
     flight.data["longitude"] = lons
-    flight.data["latitute"] = lats
+    flight.data["latitude"] = lats
     return flight
 
 
@@ -94,6 +96,44 @@ def visualization(flights, color):
         fig.tight_layout()
         plt.show()
 
+
+#visualization but for only 2 flights
+def visualization2(flight1, flight2 , color):
+    #visualization
+    with plt.style.context("traffic"):
+
+        fig = plt.figure()
+
+        # Choose the projection type
+        ax0 = fig.add_subplot(221, projection=EuroPP())
+        ax1 = fig.add_subplot(222, projection=EuroPP())
+
+        for ax in [ax0, ax1]:
+            ax.add_feature(countries())
+            # Maximum extent for the map
+            ax.set_global()
+            # Remove border and set transparency for background
+            ax.spines['geo'].set_visible(False)
+            ax.background_patch.set_visible(False)
+
+
+        ret, *_ = flight1.plot(ax0)
+
+        ret, *_ = flight2.plot(ax0)
+
+        # We reduce here the extent of the EuroPP() map
+        # between 8°W and 18°E, and 40°N and 60°N
+        ax0.set_extent((-8, 18, 40, 60))
+
+        params = dict(fontname="Ubuntu", fontsize=18, pad=12)
+
+        ax0.set_title("predicted()", **params)
+        ax1.set_title("Expected()", **params)
+
+        fig.tight_layout()
+        plt.show()
+
+
 def kalmanfilter(flight):
 
     t = 10
@@ -121,27 +161,32 @@ def testing():
     true_data = get_ground_truth_data()
     #print(flight)
     #print(kalmanfilter(flight))
-    kf = KalmanFilter(transition_matrices=[[1, 0, 10, 0],
-                                           [0, 1, 0, 10],
-                                           [0, 0, 1, 0],
-                                           [0, 0, 0, 1]],
-                      observation_matrices=[[1, 0, 0, 0],
-                                            [0, 1, 0, 0],
-                                            [0, 0, 0, 0],  #these 2 lines need to be here
-                                            [0, 0, 0, 0]],
-                      transition_covariance=[[2500, 0, 500, 0], #10 is delta t witch is 10s
-                                             [0, 2500, 0, 500],
-                                             [0, 0, 100, 0],
-                                             [0, 0, 0, 100]],
-                      observation_covariance= [[2500, 0, 25000, 0],
-                                               [ 0, 2500, 25000, 0],
-                                            [0, 0, 0, 0],       #extra 2 lines to make this work
-                                            [0, 0, 0, 0]])
+    t = 10
+    standardDeviation_covariance = 50
+    standardDeviation_transition = np.random.uniform(0.15, 0.3)
+    kf = KalmanFilter(transition_matrices=[[1*standardDeviation_transition, 0, t*standardDeviation_transition, 0],
+                                           [0, 1*standardDeviation_transition, 0, t*standardDeviation_transition],
+                                           [0, 0, 1*standardDeviation_transition, 0],
+                                           [0, 0, 0, 1*standardDeviation_transition]],
+                      observation_matrices=[[1 *standardDeviation_covariance, 0, 0, 0],
+                                            [0, 1 *standardDeviation_transition , 0, 0],
+                                            [0,0,0,0],
+                                            [0,0,0,0]],
+                      transition_covariance=[[(t ** 4 / 4)*standardDeviation_transition , 0, (t ** 3 / 2)*standardDeviation_transition, 0],  # 10 is delta t witch is 10s
+                                             [0, (t ** 4 / 4)*standardDeviation_transition, 0, (t ** 3 / 2)*standardDeviation_transition],
+                                             [0, 0, (t ** 2)*standardDeviation_transition, 0],
+                                             [0, 0, 0, (t ** 2)*standardDeviation_transition]],
+                      observation_covariance=[  [standardDeviation_covariance ** 2, 0, t * (standardDeviation_covariance ** 2), 0],
+                                                [0, standardDeviation_covariance ** 2, t * (standardDeviation_covariance ** 2), 0],
+                                            [0,0,0,0],
+                                            [0,0,0,0]]
+                      )
 
     currx = 0
     curry = 0
     currIndex = -1
-    for flight in radarData:
+    for flight1 in radarData:
+        flight = copy.copy(flight1)
         #print(flight.data.columns)
         currIndex += 1
 
@@ -150,8 +195,16 @@ def testing():
 
 
         locations = np.stack((flight.data['x'], flight.data['y'], [xv]*flight.data['x'].size, [yv]*flight.data['y'].size ), axis=1)
-        mesurements = kf.filter(locations)
+        mesurements = kf.filter(locations) #returns [[x,y,velX,velY],[x,y,velX,velY]]
+        xEs = []    #X's from the mesurements
+        yEs =[]     #y's from the mesurements
+        for i in mesurements:
+            xEs.append(i[0])
+            yEs.append(i[1])
 
+
+        flight.data['x'].__setattr__('x', xEs)
+        flight.data['y'].__setattr__('y', yEs)
         set_lat_lon_from_x_y(flight)
 
         flights.append(flight)
@@ -162,6 +215,12 @@ def testing():
         flights2.append(flight)
     visualization(flights2, 'geo')
 
+    for index in range(len(flights)):
+        print(flights[index].data['x'])
+        print(flights2[index].data['longitude'])
+        visualization2(flights[index], flights2[index], 'geo')
+
+
 
 
 
@@ -170,16 +229,19 @@ testing()
 
 #old matrix from "testing"
 
-#kf = KalmanFilter(transition_matrices=[[1, 0, 10, 0],
-#                                       [0, 1, 0, 10],
-#                                       [0, 0, 1, 0],
-#                                       [0, 0, 0, 1]],
-#                  observation_matrices=[[1, 0, 0, 0],
-#                                        [0, 1, 0, 0]],
-#                  transition_covariance=[[10 ** 4 / 4, 0, 10 ** 3 / 2, 0],  # 10 is delta t witch is 10s
-#                                         [0, 10 ** 4 / 4, 0, 10 ** 3 / 2],
-#                                         [0, 0, 10 ** 2, 0],
-#                                         [0, 0, 0, 10 ** 2]],
-#                  observation_covariance=[[50 ** 2, 0, 10 * (50 ** 2), 0],
-#                                          [0, 50 ** 2, 10 * (50 ** 2), 0]]
-#                                          )
+#    kf = KalmanFilter(transition_matrices=[[1, 0, t, 0],
+#                                           [0, 1, 0, 10],
+#                                           [0, 0, 1, 0],
+#                                           [0, 0, 0, 1]],
+#                      observation_matrices=[[1, 0, 0, 0],
+#                                            [0, 1, 0, 0],
+#                                            [0, 0, 0, 0],  #these 2 lines need to be here
+#                                            [0, 0, 0, 0]],
+#                      transition_covariance=[[2500, 0, 500, 0], #10 is delta t witch is 10s
+#                                             [0, 2500, 0, 500],
+#                                             [0, 0, 100, 0],
+#                                             [0, 0, 0, 100]],
+#                      observation_covariance= [[2500, 0, 25000, 0],
+#                                               [ 0, 2500, 25000, 0],
+#                                            [0, 0, 0, 0],       #extra 2 lines to make this work
+#                                            [0, 0, 0, 0]])
