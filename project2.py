@@ -1,6 +1,3 @@
-
-
-
 from traffic.data import samples
 from geopy.distance import geodesic
 from numpy.random import default_rng
@@ -66,7 +63,7 @@ def set_lat_lon_from_x_y(flight):
     return flight
 
 
-def visualization(flights, color):
+def visualization(flights):
     #visualization
     with plt.style.context("traffic"):
 
@@ -80,7 +77,7 @@ def visualization(flights, color):
             # Maximum extent for the map
             ax.set_global()
             # Remove border and set transparency for background
-            ax.spines[ color].set_visible(False)
+            ax.spines['geo'].set_visible(False)
             ax.background_patch.set_visible(False)
             for flight in flights:
                 ret, *_ = flight.plot(ax0)
@@ -98,7 +95,7 @@ def visualization(flights, color):
 
 
 #visualization but for only 2 flights
-def visualization2(flight1, flight2 , color):
+def visualization2(flights1, flights2 ):
     #visualization
     with plt.style.context("traffic"):
 
@@ -107,8 +104,9 @@ def visualization2(flight1, flight2 , color):
         # Choose the projection type
         ax0 = fig.add_subplot(221, projection=EuroPP())
         ax1 = fig.add_subplot(222, projection=EuroPP())
+        ax2 = fig.add_subplot(223, projection=EuroPP())
 
-        for ax in [ax0, ax1]:
+        for ax in [ax0, ax1, ax2]:
             ax.add_feature(countries())
             # Maximum extent for the map
             ax.set_global()
@@ -117,9 +115,13 @@ def visualization2(flight1, flight2 , color):
             ax.background_patch.set_visible(False)
 
 
-        ret, *_ = flight1.plot(ax0)
+            for flight in flights1:
+                ret, *_ = flight.plot(ax0)
+                ret, *_ = flight.plot(ax1)
 
-        ret, *_ = flight2.plot(ax0)
+            for flight in flights2:
+                ret, *_ = flight.plot(ax0)
+                ret, *_ = flight.plot(ax2)
 
         # We reduce here the extent of the EuroPP() map
         # between 8°W and 18°E, and 40°N and 60°N
@@ -127,8 +129,9 @@ def visualization2(flight1, flight2 , color):
 
         params = dict(fontname="Ubuntu", fontsize=18, pad=12)
 
-        ax0.set_title("predicted()", **params)
+        ax0.set_title("both()", **params)
         ax1.set_title("Expected()", **params)
+        ax2.set_title("predicted()", **params)
 
         fig.tight_layout()
         plt.show()
@@ -156,22 +159,29 @@ def kalmanfilter(flight):
 
 
 #input: flight (from filter), flight (from ground Data)
-#output: [Rate of errors, avg distance of errors]
+#output: [Rate of errors, avg distance of errors, maximum distance of one error]
 def errorCalculations(predictedFllight, actualFlight):
 
     errorRate = 0
     errorDistance = 0
-
+    maxErrorDistance = 0
+    #for every flight
     for index in range(len(predictedFllight.data['longitude'])-1):
         #TO DO, USE GEOPY TO CALCULATE ACTUAL DISTANCE FOR ERRORDISTANCE
+
+        #calculate the difference between the x and y of every flight
         error = abs(predictedFllight.data['longitude'][index] - actualFlight.data['longitude'][index]) + \
                 abs(predictedFllight.data['latitude'][index] - actualFlight.data['latitude'][index])
+        #if there was any error
         if(error != 0):
             errorRate += 1
             errorDistance += error
+            #if the error is bigger then the last biggest error
+            if(maxErrorDistance < error):
+                maxErrorDistance = error
 
     #rate calculated by combining all and dividing by how many flights
-    return [errorRate/len(predictedFllight), errorDistance/errorRate]
+    return [errorRate/len(predictedFllight), errorDistance/errorRate, maxErrorDistance]
 
 
 
@@ -203,8 +213,6 @@ def testing():
                                             [0,0,0,0]]
                       )
 
-    currx = 0
-    curry = 0
     currIndex = -1
     for flight1 in radarData:
         flight = copy.copy(flight1)
@@ -229,42 +237,39 @@ def testing():
         set_lat_lon_from_x_y(flight)
 
         flights.append(flight)
-    visualization(flights, 'geo')
 
 
     for flight in true_data:
         flights2.append(flight)
-    visualization(flights2, 'geo')
 
+    visualization2(flights, flights2)
+
+
+    errorDistances = 0
+    maxErrorDistance = 0
+    errorRates = 0
+    #error calculation for each flight
     for index in range(len(flights)):
-        #print(errorCalculations(flights[index], flights2[index]))
-        visualization2(flights[index], flights2[index], 'geo')
-
-
-
-
-
+        try:
+            errorData = errorCalculations(flights[index], flights2[index])
+            errorDistances += int(errorData[1])
+            errorRates += errorData[0]
+            if(errorData[2] > maxErrorDistance):
+                maxErrorDistance = errorData[2]
+            print(flight.callsign, ' has error rate ', errorData[0], ' max error ', errorData[2], ' avg error distance ', errorData[1])
+            #print(errorCalculations(flights[index], flights2[index]))
+        except:
+            try:
+                print(flight.data.columns)
+                print(flight.callsign)
+            except:
+                print("no flight found ")
+    print(errorDistances)
+    print("mean error distance = ", (errorDistances/len(flights)))
+    print("max distance error = ", maxErrorDistance)
+    print("rate of errors over all = ", errorRates/len(flights))
     return "bla"
+
+
 testing()
 
-
-
-
-#old matrix from "testing"
-
-#    kf = KalmanFilter(transition_matrices=[[1, 0, t, 0],
-#                                           [0, 1, 0, 10],
-#                                           [0, 0, 1, 0],
-#                                           [0, 0, 0, 1]],
-#                      observation_matrices=[[1, 0, 0, 0],
-#                                            [0, 1, 0, 0],
-#                                            [0, 0, 0, 0],  #these 2 lines need to be here
-#                                            [0, 0, 0, 0]],
-#                      transition_covariance=[[2500, 0, 500, 0], #10 is delta t witch is 10s
-#                                             [0, 2500, 0, 500],
-#                                             [0, 0, 100, 0],
-#                                             [0, 0, 0, 100]],
-#                      observation_covariance= [[2500, 0, 25000, 0],
-#                                               [ 0, 2500, 25000, 0],
-#                                            [0, 0, 0, 0],       #extra 2 lines to make this work
-#                                            [0, 0, 0, 0]])
