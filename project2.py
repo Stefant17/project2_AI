@@ -256,15 +256,15 @@ def testing():
             errorRates += errorData[0]
             if(errorData[2] > maxErrorDistance):
                 maxErrorDistance = errorData[2]
-            print(flight.callsign, ' has error rate ', errorData[0], ' max error ', errorData[2], ' avg error distance ', errorData[1])
+            print(flight.flight_id, ' has error rate ', errorData[0], ' max error ', errorData[2], ' avg error distance ', errorData[1])
             #print(errorCalculations(flights[index], flights2[index]))
         except:
+            #if flight could not be found or processed then print it out
             try:
-                print(flight.data.columns)
-                print(flight.callsign)
+                print(flight)
             except:
                 print("no flight found ")
-    print(errorDistances)
+    print("in conclusion ")
     print("mean error distance = ", (errorDistances/len(flights)))
     print("max distance error = ", maxErrorDistance)
     print("rate of errors over all = ", errorRates/len(flights))
