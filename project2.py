@@ -37,7 +37,7 @@ def get_radar_data():
     gt = get_ground_truth_data()
     radar_data = []
     for flight in gt:
-        print("flight: %s" % (str(flight)))
+        #print("flight: %s" % (str(flight)))
         flight_radar = flight.resample("10s")
         for i in range(len(flight_radar.data)):
             point = geodesic(kilometers=rng.normal() * radar_error).destination(
@@ -76,8 +76,8 @@ def set_lat_lon_from_x_y(flight):
     flight.data["latitude"] = lats
     return flight
 
-#visualization for two flights (prediced route, actual route)
-def visualization(flight1, flight2):
+#visualization for three flights (prediced route, actual route, smoothed route )
+def visualization(flight1, flight2, flight3 ):
     #visualization
     with plt.style.context("traffic"):
 
@@ -86,8 +86,10 @@ def visualization(flight1, flight2):
         # Choose the projection type
         ax0 = fig.add_subplot(221, projection=PlateCarree())
         ax1 = fig.add_subplot(222, projection=PlateCarree())
+        ax2 = fig.add_subplot(223, projection=PlateCarree())
+        ax3 = fig.add_subplot(224, projection=PlateCarree())
 
-        for ax in [ax0, ax1]:
+        for ax in [ax0, ax1, ax2, ax3]:
             ax.add_feature(countries())
             # Maximum extent for the map
             ax.set_global()
@@ -98,17 +100,24 @@ def visualization(flight1, flight2):
         ret, *_ = flight1.plot(ax0)
         ret, *_ = flight2.plot(ax1)
 
+        ret, *_ = flight1.plot(ax2)
+        ret, *_ = flight2.plot(ax2)
+
+        ret, *_ = flight3.plot(ax3)
+
         params = dict(fontname="Ubuntu", fontsize=18, pad=12)
 
         ax0.set_title("predicted()", **params)
         ax1.set_title("Expected()", **params)
+        ax3.set_title("Smooth()", **params)
+        ax2.set_title("Both()", **params)
 
         fig.tight_layout()
         plt.show()
 
 
 #visualization for all flight, first predicted then expected
-def visualization2(flights1, flights2 ):
+def visualization2(flights1, flights2 , flights3 ):
     #visualization
     with plt.style.context("traffic"):
 
@@ -118,6 +127,7 @@ def visualization2(flights1, flights2 ):
         ax0 = fig.add_subplot(221, projection=PlateCarree())
         ax1 = fig.add_subplot(222, projection=PlateCarree())
         ax2 = fig.add_subplot(223, projection=PlateCarree())
+        ax3 = fig.add_subplot(223, projection=PlateCarree())
 
         for ax in [ax0, ax1, ax2]:
             ax.add_feature(countries())
@@ -137,11 +147,16 @@ def visualization2(flights1, flights2 ):
             ret, *_ = flight.plot(ax2)
 
 
+        for flight in flights3:
+            ret, *_ = flight.plot(ax3)
+
+
         params = dict(fontname="Ubuntu", fontsize=18, pad=12)
 
         ax0.set_title("both()", **params)
         ax1.set_title("Predicted()", **params)
         ax2.set_title("Expected()", **params)
+        ax3.set_title("Smooth()", **params)
 
         fig.tight_layout()
         plt.show()
@@ -155,7 +170,7 @@ def errorCalculations(predictedFllight, actualFlight):
     #Rate of errors,
     #error distance (used to calculate avrage distance
     #biggest error distance
-    errorRate = 1
+    errorRate = 0
     errorDistance = 0
     maxErrorDistance = 0
     #if there is more info in the "PredictedFlights" go through every route in there
@@ -172,22 +187,18 @@ def errorCalculations(predictedFllight, actualFlight):
         #TO DO, USE GEOPY TO CALCULATE ACTUAL DISTANCE FOR ERRORDISTANCE
 
         #calculate the difference between the x and y of every flight
-        error = abs(predictedFllight.data['longitude'][index] - actualFlight.data['longitude'][index]) + \
-                abs(predictedFllight.data['latitude'][index] - actualFlight.data['latitude'][index])
-        #if there was any error
-        if(error != 0 and ~np.isnan(error)):
-            errorRate += 1
-            #print('error' , error)
-            errorDistance += error
-            #if the error is bigger then the last biggest error
-            if(maxErrorDistance < error):
-                maxErrorDistance = error
-        else:
+        try:
+            error = geodesic((predictedFllight.data['latitude'][index], predictedFllight.data['longitude'][index]  ),(actualFlight.data['latitude'][index], actualFlight.data['longitude'][index] )).km
+            if(error != 0 and ~np.isnan(error)):
+                errorRate += 1
+                #print('error' , error)
+                errorDistance += error
+                #if the error is bigger then the last biggest error
+                if(maxErrorDistance < error):
+                    maxErrorDistance = error
+        except:
+            #if there was any error
             print("NAAAAAAAN")
-            #print(predictedFllight.data['longitude'][index])
-            #print(predictedFllight.data['latitude'][index])
-            #print(actualFlight.data)
-            #print(actualFlight.data.columns)
 
             #rate calculated (nr.errors/allFlights), avg. Distance of errors, Maximum Distance of one error
     return [errorRate/lenValues, errorDistance/errorRate, maxErrorDistance]
@@ -197,6 +208,8 @@ def errorCalculations(predictedFllight, actualFlight):
 def testing(sigmaP, sigmaO ):
     flights = []    #predicted locations
     flights2 = []   #actual locations
+
+    smoothedFlights = []
 
     radarData = get_radar_data()    #Data From the Radar
     true_data = get_ground_truth_data() #Actual Data
@@ -252,23 +265,30 @@ def testing(sigmaP, sigmaO ):
 
         #mesurments from the KalmanFilter
         mesurements = kf.filter(locations) #returns [[x,y,velX,velY],[x,y,velX,velY]]
+        smoothedMesurements = kf.smooth(locations)
+
 
         xEs = []    #X's from the mesurements
         yEs =[]     #y's from the mesurements
         currIndex = -1 #to hold the index
+
+
 
         #taking the mesurements from the KalmanFilter and putting the X coordinates in the xEs list and y in the yEs list
         for i in mesurements[0]:
             currIndex += 1
             xEs.append(i[0] + flight.data['x'][currIndex])
             yEs.append(i[1] + flight.data['y'][currIndex])
-        #replace old 'x', 'y' with the prediced 'x' and 'y' from the KalmanFilter
+
+
+        #replace old 'x', 'y' with the prediced 'x' and 'y' from the Kalman Filter
         flight.data['x'] = flight.data['x'].replace([flight.data['x']], [pd.Series(xEs)])
         flight.data['y'] = flight.data['y'].replace([flight.data['y']], [pd.Series(yEs)])
 
         #set longitude and latitude from the new x and y coordinates
         set_lat_lon_from_x_y(flight)
 
+        smoothedFlights.append(Smoothening(smoothedMesurements, flight))
 
         #put the new predicted flight in the "flights" list
         flights.append(flight)
@@ -283,38 +303,55 @@ def testing(sigmaP, sigmaO ):
     errorDistances = 0
     maxErrorDistance = 0
     errorRates = 0
-    worstFlightPredicted = flight
-    worstFlightExpected = flight
 
     #error calculation for each flight
     for index in range(len(flights)):
         #try:
             errorData = errorCalculations(flights[index], flights2[index])
-            errorDistances += errorData[1].item()
+            errorDistances += errorData[1]
             errorRates += errorData[0]
             if(errorData[2] > maxErrorDistance):
                 maxErrorDistance = errorData[2]
-
-                visualization(flights[index], flights2[index])
-            #print(flights[index].callsign, ' has error rate     ', errorData[0], '   max error ', errorData[2], '    avg error distance     ', errorDistances)
-        #except:
-            #if flight could not be found or processed then print it out
-         #   try:
-          #      print(flights[index].data['latitude'])
-          #      print(flights[index].data['longitude'])
-          #      print(flights2[index].data['latitude'])
-          #      print(flights2[index].data['longitude'])
-          #      visualization(flights[index], flights2[index])
-          #  except:
-          #      print("no flight found ")
+                visualization(flights[index], flights2[index], smoothedFlights[index])
+            print(flights[index].callsign, '   max error ', errorData[2], '    avg error distance     ', errorData[1])
     print("in conclusion ")
     print("mean error distance = ", errorDistances/len(flights))
     print("max distance error = ", maxErrorDistance)
-    print("rate of errors over all = ", errorRates/len(flights))
     #visualization of all flights (predicted route flights, actual route flights)
-    visualization2(flights, flights2)
+    visualization2(flights, flights2, smoothedFlights)
     return "bla"
 
-for i in [[ 0.3, 50] , [0.15, 50], [0.3, 25], [0.15, 25]]:#, [50, 0.20], [50, 0.25], [50, 0.3], [50, 0.2], [50, 0.2], [50, 0.2]]:  #sigma changes, for testing
-    testing(i[0], i[1]) #implementation of the kalman filter
+def Smoothening(mesurements, flight1 ):
+        flight = copy.copy(flight1) #copy flight
 
+        xEs = []    #X's from the mesurements
+        yEs =[]     #y's from the mesurements
+        currIndex = -1 #to hold the index
+
+
+
+        #taking the mesurements from the KalmanFilter and putting the X coordinates in the xEs list and y in the yEs list
+        for i in mesurements[0]:
+            currIndex += 1
+            xEs.append(i[0] + flight.data['x'][currIndex])
+            yEs.append(i[1] + flight.data['y'][currIndex])
+
+
+
+        #replace old 'x', 'y' with the prediced 'x' and 'y' from the KalmanFilter
+        flight.data['x'] = flight.data['x'].replace([flight.data['x']], [pd.Series(xEs)])
+        flight.data['y'] = flight.data['y'].replace([flight.data['y']], [pd.Series(yEs)])
+
+        #set longitude and latitude from the new x and y coordinates
+        set_lat_lon_from_x_y(flight)
+
+
+        #return flight
+        return flight
+
+
+        #[ [sigamaP, sigmO] ] for testing Sigma value differation
+#for i in [[ 0.3, 50] , [0.15, 50], [0.3, 25], [0.15, 25]]:
+#    testing(i[0], i[1]) #implementation of the kalman filter
+       #sigmaP, sigmaO
+testing(0.15, 50)
