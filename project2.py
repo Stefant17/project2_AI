@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from traffic.core.projection import Amersfoort, GaussKruger, Lambert93, EuroPP
 from traffic.drawing import countries
 
+import pandas as pd
 # returns a list of flights with the original GPS data
 def get_ground_truth_data():
     names=['liguria', 'pixair_toulouse', 'indiana', 'texas', 'georeal_fyn_island', 'ign_mercantour', 'ign_fontainebleau', 'mecsek_mountains', 'ign_lot_et_garonne', 'inflight_refuelling', 'aircraft_carrier', 'luberon', 'alto_adige', 'franconia', 'danube_valley', 'cevennes', 'oxford_cambridge', 'alpi_italiane', 'rega_zh', 'samu31', 'rega_sg', 'monastir', 'guatemala', 'london_heathrow', 'cardiff', 'sydney', 'brussels_ils', 'ajaccio', 'toulouse', 'noumea', 'london_gatwick', 'perth', 'kota_kinabalu', 'montreal', 'funchal', 'nice', 'munich', 'vancouver', 'lisbon', 'liege_sprimont', 'kiruna', 'bornholm', 'kingston', 'brussels_vor', 'vienna', 'border_control', 'dreamliner_boeing', 'texas_longhorn', 'zero_gravity', 'qantas747', 'turkish_flag', 'airbus_tree', 'easter_rabbit', 'belevingsvlucht', 'anzac_day', 'thankyou', 'vasaloppet']
@@ -62,8 +63,8 @@ def set_lat_lon_from_x_y(flight):
     flight.data["latitude"] = lats
     return flight
 
-
-def visualization(flights):
+#visualization for two flights (prediced route, actual route)
+def visualization(flight1, flight2):
     #visualization
     with plt.style.context("traffic"):
 
@@ -71,30 +72,34 @@ def visualization(flights):
 
         # Choose the projection type
         ax0 = fig.add_subplot(221, projection=EuroPP())
+        ax1 = fig.add_subplot(222, projection=EuroPP())
 
-        for ax in [ax0]:
+        for ax in [ax0, ax1]:
             ax.add_feature(countries())
             # Maximum extent for the map
             ax.set_global()
             # Remove border and set transparency for background
             ax.spines['geo'].set_visible(False)
             ax.background_patch.set_visible(False)
-            for flight in flights:
-                ret, *_ = flight.plot(ax0)
+
+        ret, *_ = flight1.plot(ax0)
+        ret, *_ = flight2.plot(ax1)
 
         # We reduce here the extent of the EuroPP() map
         # between 8°W and 18°E, and 40°N and 60°N
         ax0.set_extent((-8, 18, 40, 60))
+        ax1.set_extent((-8, 18, 40, 60))
 
         params = dict(fontname="Ubuntu", fontsize=18, pad=12)
 
-        ax0.set_title("EuroPP()", **params)
+        ax0.set_title("predicted()", **params)
+        ax0.set_title("Expected()", **params)
 
         fig.tight_layout()
         plt.show()
 
 
-#visualization but for only 2 flights
+#visualization for all flight, first predicted then expected
 def visualization2(flights1, flights2 ):
     #visualization
     with plt.style.context("traffic"):
@@ -115,161 +120,184 @@ def visualization2(flights1, flights2 ):
             ax.background_patch.set_visible(False)
 
 
-            for flight in flights1:
-                ret, *_ = flight.plot(ax0)
-                ret, *_ = flight.plot(ax1)
+        for flight in flights1:
+            ret, *_ = flight.plot(ax0)
+            ret, *_ = flight.plot(ax1)
 
-            for flight in flights2:
-                ret, *_ = flight.plot(ax0)
-                ret, *_ = flight.plot(ax2)
+        for flight in flights2:
+            ret, *_ = flight.plot(ax0)
+            ret, *_ = flight.plot(ax2)
 
         # We reduce here the extent of the EuroPP() map
         # between 8°W and 18°E, and 40°N and 60°N
         ax0.set_extent((-8, 18, 40, 60))
+        ax1.set_extent((-8, 18, 40, 60))
+        ax2.set_extent((-8, 18, 40, 60))
 
         params = dict(fontname="Ubuntu", fontsize=18, pad=12)
 
         ax0.set_title("both()", **params)
         ax1.set_title("Expected()", **params)
-        ax2.set_title("predicted()", **params)
+        ax2.set_title("Predicted()", **params)
 
         fig.tight_layout()
         plt.show()
 
-
-def kalmanfilter(flight):
-
-    t = 10
-    std_Deviation_observation = 50
-    kf = KalmanFilter(transition_matrices=[[1, 0, t, 0],
-                                           [0, 1, 0, t],
-                                           [0, 0, 1, 0],
-                                           [0, 0, 0, 1]],
-                      observation_matrices=[[1, 0, 0, 0],
-                                            [0, 1, 0, 0]],
-                      transition_covariance=[[10 ** 4 /4, 0, 10**3 /2, 0], #10 is delta t witch is 10s
-                                             [0, 10**4 /4, 0, 10**3 /2],
-                                             [0, 0, 10**2, 0],
-                                             [0, 0, 0, 10**2]],
-                      observation_covariance= [[50 ** 2, 0, t * (50**2), 0],
-                                               [ 0, 50 ** 2, t * (50**2), 0]] )
-    measurements = np.asarray([[flight.data['x'], flight.data['y'], 0, 0]])  # 3 observations
-    kf = kf.em(measurements, n_iter=5)
-    return kf
 
 
 #input: flight (from filter), flight (from ground Data)
 #output: [Rate of errors, avg distance of errors, maximum distance of one error]
 def errorCalculations(predictedFllight, actualFlight):
 
-    errorRate = 0
+    #Rate of errors,
+    #error distance (used to calculate avrage distance
+    #biggest error distance
+    errorRate = 1
     errorDistance = 0
     maxErrorDistance = 0
-    #for every flight
-    for index in range(len(predictedFllight.data['longitude'])-1):
+    #if there is more info in the "PredictedFlights" go through every route in there
+    #else if there is more in the "ActualFlights" go through every route in there
+    #(since they are both calibrated for every 10 seconds)
+    if(len(predictedFllight.data['longitude']) > len(actualFlight.data['longitude'])):
+        lenValues = len(actualFlight.data['longitude'])
+    else:
+        lenValues = len(predictedFllight.data['longitude'])
+
+
+    #for every longitude/latitude value
+    for index in range(lenValues):
         #TO DO, USE GEOPY TO CALCULATE ACTUAL DISTANCE FOR ERRORDISTANCE
 
         #calculate the difference between the x and y of every flight
         error = abs(predictedFllight.data['longitude'][index] - actualFlight.data['longitude'][index]) + \
                 abs(predictedFllight.data['latitude'][index] - actualFlight.data['latitude'][index])
         #if there was any error
-        if(error != 0):
+        if(error != 0 and ~np.isnan(error)):
             errorRate += 1
+            #print('error' , error)
             errorDistance += error
             #if the error is bigger then the last biggest error
             if(maxErrorDistance < error):
                 maxErrorDistance = error
+        else:
+            print("NAAAAAAAN")
+            #print(predictedFllight.data['longitude'][index])
+            #print(predictedFllight.data['latitude'][index])
+            #print(actualFlight.data)
+            #print(actualFlight.data.columns)
 
-    #rate calculated by combining all and dividing by how many flights
-    return [errorRate/len(predictedFllight), errorDistance/errorRate, maxErrorDistance]
+            #rate calculated (nr.errors/allFlights), avg. Distance of errors, Maximum Distance of one error
+    return [errorRate/lenValues, errorDistance/errorRate, maxErrorDistance]
 
 
 
-def testing():
-    flights = []  #predicted locations
-    flights2 = [] #actual locations
-    radarData = get_radar_data()
-    true_data = get_ground_truth_data()
-    #print(flight)
-    #print(kalmanfilter(flight))
-    t = 10
-    standardDeviation_covariance = 50
-    standardDeviation_transition = np.random.uniform(0.15, 0.3)
-    kf = KalmanFilter(transition_matrices=[[1*standardDeviation_transition, 0, t*standardDeviation_transition, 0],
-                                           [0, 1*standardDeviation_transition, 0, t*standardDeviation_transition],
-                                           [0, 0, 1*standardDeviation_transition, 0],
-                                           [0, 0, 0, 1*standardDeviation_transition]],
-                      observation_matrices=[[1 *standardDeviation_covariance, 0, 0, 0],
-                                            [0, 1 *standardDeviation_transition , 0, 0],
-                                            [0,0,0,0],
-                                            [0,0,0,0]],
-                      transition_covariance=[[(t ** 4 / 4)*standardDeviation_transition , 0, (t ** 3 / 2)*standardDeviation_transition, 0],  # 10 is delta t witch is 10s
-                                             [0, (t ** 4 / 4)*standardDeviation_transition, 0, (t ** 3 / 2)*standardDeviation_transition],
-                                             [0, 0, (t ** 2)*standardDeviation_transition, 0],
-                                             [0, 0, 0, (t ** 2)*standardDeviation_transition]],
-                      observation_covariance=[  [standardDeviation_covariance ** 2, 0, t * (standardDeviation_covariance ** 2), 0],
-                                                [0, standardDeviation_covariance ** 2, t * (standardDeviation_covariance ** 2), 0],
-                                            [0,0,0,0],
-                                            [0,0,0,0]]
-                      )
+def testing(sigmaP, sigmaO ):
+    flights = []    #predicted locations
+    flights2 = []   #actual locations
 
-    currIndex = -1
+    radarData = get_radar_data()    #Data From the Radar
+    true_data = get_ground_truth_data() #Actual Data
+
+
+    t = 10 #Delta Time
+    standardDeviation_covariance = sigmaO **2
+    standardDeviation_transition = sigmaP **2
+    #standardDeviation_transition = np.random.uniform(0.15, 0.3)   #when you want sigmaP to be a random nr. between 0.15 and 0.3
     for flight1 in radarData:
-        flight = copy.copy(flight1)
-        #print(flight.data.columns)
-        currIndex += 1
+        flight = copy.copy(flight1) #copy flight
 
+        #kalman Filter from our implementation
+        kf = KalmanFilter(transition_matrices=[[1*(standardDeviation_transition), 0, t**2  * (standardDeviation_transition), 0],
+                                               [0, 1*(standardDeviation_transition), 0, t**2 * (standardDeviation_transition)],
+                                               [t**2  * (standardDeviation_transition), 0, 1*(standardDeviation_transition), 0],
+                                               [0, t**2 * (standardDeviation_transition), 0, 1*(standardDeviation_transition)]],
+                          observation_matrices=[[1 *standardDeviation_covariance, 0, 0, 0],
+                                                [0, 1 *standardDeviation_covariance, 0, 0],
+                                                [0,0,0,0],  #originally this was a 2x4 matix but Pykal would not accept that, so 2 lines were added to make this a 4x4 matrix
+                                                [0,0,0,0]],
+                          transition_covariance=[[(t ** 4 / 4)* (standardDeviation_transition), 0, (t ** 3 / 2)*(standardDeviation_transition), 0],
+                                                 [0, (t ** 4 / 4)*(standardDeviation_transition), 0, (t ** 3 / 2)*(standardDeviation_transition)],
+                                                 [(t ** 3 / 2)*(standardDeviation_transition), 0, (t ** 2)*(standardDeviation_transition), 0],
+                                                 [0, (t ** 3 / 2)*(standardDeviation_transition), 0, (t ** 2)*(standardDeviation_transition)]],
+                          observation_covariance=[[standardDeviation_covariance, 0, t * (standardDeviation_covariance), 0],
+                                                  [0, standardDeviation_covariance, t * (standardDeviation_covariance), 0],
+                                                  [0, 0, 0, 0],
+                                                  [0, 0, 0, 0]]
+                          )
+
+        #avrage acceleration calculation
         xv = (flight.data['x'][len(flight.data['x'])-1] - flight.data['x'][0])/ len(flight.data['x'])*10
         yv = (flight.data['y'][len(flight.data['y'])-1] - flight.data['y'][0])/ len(flight.data['y'])*10
+        print("avrage acceleration calculation ", xv)
 
-
+        #locations from the flight, [x,y,vel.x, vel.y]
         locations = np.stack((flight.data['x'], flight.data['y'], [xv]*flight.data['x'].size, [yv]*flight.data['y'].size ), axis=1)
+
+        #mesurments from the KalmanFilter
         mesurements = kf.filter(locations) #returns [[x,y,velX,velY],[x,y,velX,velY]]
+
         xEs = []    #X's from the mesurements
         yEs =[]     #y's from the mesurements
-        for i in mesurements:
-            xEs.append(i[0])
-            yEs.append(i[1])
+        currIndex = -1 #to hold the index
 
+        #taking the mesurements from the KalmanFilter and putting the X coordinates in the xEs list and y in the yEs list
+        for i in mesurements[0]:
+            currIndex += 1
+            xEs.append(i[0] + flight.data['x'][currIndex])
+            yEs.append(i[1] + flight.data['y'][currIndex])
+        #replace old 'x', 'y' with the prediced 'x' and 'y' from the KalmanFilter
+        flight.data['x'] = flight.data['x'].replace([flight.data['x']], [pd.Series(xEs)])
+        flight.data['y'] = flight.data['y'].replace([flight.data['y']], [pd.Series(yEs)])
 
-        flight.data['x'].__setattr__('x', xEs)
-        flight.data['y'].__setattr__('y', yEs)
+        #set longitude and latitude from the new x and y coordinates
         set_lat_lon_from_x_y(flight)
 
+
+        #put the new predicted flight in the "flights" list
         flights.append(flight)
 
-
+    #put actual rout of flights in "flights2" list
     for flight in true_data:
+        flight.resample("10s") #get data for every 10 seconds
         flights2.append(flight)
 
-    visualization2(flights, flights2)
 
 
     errorDistances = 0
     maxErrorDistance = 0
     errorRates = 0
+    worstFlightPredicted = flight
+    worstFlightExpected = flight
+
     #error calculation for each flight
     for index in range(len(flights)):
-        try:
+        #try:
             errorData = errorCalculations(flights[index], flights2[index])
-            errorDistances += int(errorData[1])
+            errorDistances += errorData[1].item()
             errorRates += errorData[0]
             if(errorData[2] > maxErrorDistance):
                 maxErrorDistance = errorData[2]
-            print(flight.flight_id, ' has error rate ', errorData[0], ' max error ', errorData[2], ' avg error distance ', errorData[1])
-            #print(errorCalculations(flights[index], flights2[index]))
-        except:
+
+                #visualization(flights[index], flights2[index])
+            #print(flights[index].callsign, ' has error rate     ', errorData[0], '   max error ', errorData[2], '    avg error distance     ', errorDistances)
+        #except:
             #if flight could not be found or processed then print it out
-            try:
-                print(flight)
-            except:
-                print("no flight found ")
+         #   try:
+          #      print(flights[index].data['latitude'])
+          #      print(flights[index].data['longitude'])
+          #      print(flights2[index].data['latitude'])
+          #      print(flights2[index].data['longitude'])
+          #      visualization(flights[index], flights2[index])
+          #  except:
+          #      print("no flight found ")
     print("in conclusion ")
-    print("mean error distance = ", (errorDistances/len(flights)))
+    print("mean error distance = ", errorDistances/len(flights))
     print("max distance error = ", maxErrorDistance)
     print("rate of errors over all = ", errorRates/len(flights))
+    #visualization of all flights (predicted route flights, actual route flights)
+    visualization2(flights, flights2)
     return "bla"
 
-
-testing()
+for i in [[ 0.3, 50] , [0.15, 50], [0.3, 10], [0.15, 10]]:#, [50, 0.20], [50, 0.25], [50, 0.3], [50, 0.2], [50, 0.2], [50, 0.2]]:  #sigma changes, for testing
+    testing(i[0], i[1]) #implementation of the kalman filter
 
