@@ -2,7 +2,7 @@ from traffic.data.samples import airbus_tree, quickstart, belevingsvlucht
 
 import matplotlib.pyplot as plt
 
-from traffic.core.projection import Amersfoort, GaussKruger, Lambert93, EuroPP
+from traffic.core.projection import Amersfoort, GaussKruger, Lambert93, PlateCarree
 from traffic.drawing import countries
 
 with plt.style.context("traffic"):
